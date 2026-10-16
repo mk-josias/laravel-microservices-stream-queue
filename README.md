@@ -11,9 +11,12 @@ composer require mk-josias/laravel-microservices-stream-queue
 // config/microservices.php
 'default' => [
     'driver' => 'queue',
-    'connection' => env('MICROSERVICES_QUEUE_CONNECTION'), // a queue.connections entry, null for the default one
-    'key' => 'microservices-events', // each service reads {key}-{service}
-    'sleep' => 1,                    // seconds to wait when the queue is empty
+    // a queue.connections entry, null for the default one
+    'connection' => env('MICROSERVICES_QUEUE_CONNECTION'),
+    // each service reads {key}-{service}
+    'key' => 'microservices-events',
+    // seconds to wait when the queue is empty
+    'sleep' => 1,
 ],
 ```
 

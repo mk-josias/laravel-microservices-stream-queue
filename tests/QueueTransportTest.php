@@ -46,11 +46,28 @@ it('hands the consumer its own copy, then deletes it', function () {
     $transport->publish(paid(1));
     $received = [];
 
-    $transport->consume('orders', ['billing'], function (Envelope $envelope) use (&$received, $transport): void {
+    $transport->consume(['orders'], ['billing'], function (Envelope $envelope) use (&$received, $transport): void {
         $received[] = $envelope->payload;
         $transport->stop();
     });
 
     expect($received)->toBe([['order_id' => 1]])
         ->and(DB::table('jobs')->pluck('queue')->all())->toBe(['microservices-default-billing']);
+});
+
+it('serves several consumers from one loop, each from its own queue', function () {
+    $transport = app(Transport::class);
+    $transport->publish(paid(1));
+    $received = [];
+
+    $transport->consume(['orders', 'billing'], ['billing'], function (Envelope $envelope, string $consumer) use (&$received, $transport): void {
+        $received[] = $consumer;
+
+        if (count($received) === 2) {
+            $transport->stop();
+        }
+    });
+
+    expect($received)->toBe(['orders', 'billing'])
+        ->and(DB::table('jobs')->count())->toBe(0);
 });

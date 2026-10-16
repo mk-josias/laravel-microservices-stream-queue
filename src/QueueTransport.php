@@ -40,38 +40,46 @@ final class QueueTransport implements RedeliversEnvelopes, Transport
         }
     }
 
-    public function consume(string $consumer, array $channels, callable $handle): void
+    /** Each pass pops one job from every consumer's queue, and sleeps only when all of them were empty. */
+    public function consume(array $consumers, array $channels, callable $handle): void
     {
-        $failures = 0;
+        $failures = array_fill_keys($consumers, 0);
 
         while ($this->listening) {
-            $job = $this->connection()->pop($this->queue($consumer));
+            $popped = false;
 
-            if ($job === null) {
-                sleep(max(1, $this->config->getSleep()));
+            foreach ($consumers as $consumer) {
+                $job = $this->connection()->pop($this->queue($consumer));
 
-                continue;
-            }
+                if ($job === null) {
+                    continue;
+                }
 
-            $envelope = Envelope::fromJson($job->getRawBody());
+                $popped = true;
+                $envelope = Envelope::fromJson($job->getRawBody());
 
-            if (! in_array($envelope->emitter, $channels, true)) {
+                if (! in_array($envelope->emitter, $channels, true)) {
+                    $job->delete();
+
+                    continue;
+                }
+
+                try {
+                    $handle($envelope, $consumer);
+                } catch (Throwable $e) {
+                    report($e);
+                    $job->release(min(self::MAX_BACKOFF_SECONDS, 2 ** min(++$failures[$consumer], 6)));
+
+                    continue;
+                }
+
                 $job->delete();
-
-                continue;
+                $failures[$consumer] = 0;
             }
 
-            try {
-                $handle($envelope);
-            } catch (Throwable $e) {
-                report($e);
-                $job->release(min(self::MAX_BACKOFF_SECONDS, 2 ** min(++$failures, 6)));
-
-                continue;
+            if (! $popped) {
+                sleep(max(1, $this->config->getSleep()));
             }
-
-            $job->delete();
-            $failures = 0;
         }
     }
 
